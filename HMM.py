@@ -228,12 +228,12 @@ def kViterbiParallel(pi, a, b, obs, topK):
     if topK == 1:
         return viterbi2(pi, a, b, obs)
 
-    pi = pi[:-1] # remove the extra?
+    pi = pi[:-1]  # remove the extra?
     # STEP 1: Initialisation
     nStates = np.shape(b)[0]  # tags - e.g. B-NP, I-Positive
     T = np.shape(obs)[0]  # observation -> words
 
-    assert topK <= np.power(nStates, T), "k < nStates ^ topK"
+    #assert topK <= np.power(nStates, T), "k < nStates ^ topK"
 
     # delta --> highest probability of any path that reaches point i
     delta = np.zeros((T, nStates, topK))
@@ -249,19 +249,19 @@ def kViterbiParallel(pi, a, b, obs, topK):
         for k in range(0, topK):
             phi[0, i, k] = i  # set index for states
 
-    # STEP 2: Recursion
+    # STEP 2: Recursion and termination
     # Go forward calculating top k scoring paths
-    # for each state s1 from previous state s2 at time step t
+    # for each state s1 from previous state s0 at time step t
     for t in range(1, T):  # for each word
-        for s1 in range(nStates):
+        for s1 in range(nStates):  # for each tag
             h = []
-            for s2 in range(nStates):
+            for s0 in range(nStates):
                 for k in range(topK):
-                    prob = delta[t - 1, s2, k] * a[s2, s1] * b[s1, obs[t]]
-                    state = s2
+                    prob = delta[t - 1, s0, k] * a[s0, s1] * b[s1, obs[t]]
+                    state = s0
                     heapq.heappush(h, (prob, state))  # retain previous state
 
-            h_sorted = [heapq.heappop(h) for i in range(len(h))]  # heapsort
+            h_sorted = [heapq.heappop(h) for i in range(len(h))]  # heapsort on prob
             h_sorted.reverse()
 
             rankDict = dict()  # keep a ranking if a path crosses a state more than once
@@ -282,14 +282,14 @@ def kViterbiParallel(pi, a, b, obs, topK):
 
     h = []  # Put all the last items on the stack
 
-    # Get all the topK from all the states
+    # Get the highest end prob from all the states
     for s1 in range(nStates):
         for k in range(topK):
             prob = delta[T - 1, s1, k]
 
             heapq.heappush(h, (prob, s1, k))  # retain previous state and k
 
-    h_sorted = [heapq.heappop(h) for i in range(len(h))]  # heapsort by prob
+    h_sorted = [heapq.heappop(h) for i in range(len(h))]  # heapsort on prob
     h_sorted.reverse()
 
     # initialize output
@@ -317,6 +317,7 @@ def kViterbiParallel(pi, a, b, obs, topK):
             rankK = rank[t + 1][nextState][rankK]
 
     return path, path_probs, delta, phi
+
 
 
 def viterbi2(pi, a, b, obs):
