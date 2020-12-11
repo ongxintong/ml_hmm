@@ -105,6 +105,41 @@ def calc_emission_UNK_pairwise(df, word, tag, k=0.5):
     #     print(f'emission parameter is {count_yx} / {count_y} = {emission_parameter}')
     return emission_parameter
 
+def get_emission_para(df,words, tags, k=0.5):
+	datalist = df.values.tolist()
+	words.append('#UNK#')
+	if '##START##' in tags:
+		tags.remove('##START##')
+	if '##STOP##' in tags:
+		tags.remove('##STOP##')
+
+	emissiondf = df.groupby(df.columns.tolist()).size().reset_index().rename(columns={0:'count'})
+	tagcount = emissiondf.groupby(['tag']).size().reset_index(name='count')
+	tagcountlist = tagcount.values.tolist()
+
+	countylist = [0] * len(tags)
+	for count in tagcountlist: #count = [tag, count]
+		idx = tags.index(count[0])
+		countylist[idx] = (count[1] + k)
+	
+	countxy = {} #{word:[tagcount,tagcount]
+	county = {}
+	for word in words:
+		countxy[word] = [0] * len(tags)
+		county[word] = countylist
+		if word == '#UNK#':
+			countxy[word] = [k] * len(tags)
+	
+	countydf = pd.DataFrame(county, columns = words, index = tags)
+	
+	for data in datalist: #data = [word, tag]
+		idx = tags.index(data[1])
+		countxy[data[0]][idx] += 1
+	
+	countxydf = pd.DataFrame(countxy, columns = words, index = tags)
+	
+	emission = countxydf/ countydf
+	return emission
 
 def read_input_data(dataset, vocabulary):
     words = []
@@ -152,7 +187,7 @@ def get_predictions_dict(possible_tags, vocab, emission_parameters):
     return predict_dict
 
 #------part 3------
-
+#Reads file by line
 def read_train_file(dataset):
     fin = open(dataset + "/train", "r", encoding="utf-8")
     data = fin.readlines()
@@ -167,7 +202,7 @@ def read_train_file(dataset):
     return datalist
 
 
-def transition_para(datalist, tags):
+def get_transition_para(datalist, tags):
     tagcount = {}
     countu = {}
     countuv = {}
@@ -221,6 +256,85 @@ def transition_para(datalist, tags):
 
     trans_para = countuvdf / countudf
     return trans_para
+def viterbi(dataset, trainwords, traintags, traindf, devinline, transitionest, emissionest):
+	transition_dict = transitionest.to_dict('dict') #{v:{u:value}}
+	emission_dict = emissionest.to_dict('dict') #{word:{tag: value}}
+	if '##START##' in traintags:
+		traintags.remove('##START##')
+	if '##STOP##' in traintags:
+		traintags.remove('##STOP##')
+	
+	#Create empty dict
+	pi = [{tag: [0.0, ''] for tag in list(traintags)} for i in devinline]
+	
+	#Start
+	for i in traintags:
+		if transition_dict[i]['##START##'] == 0.0:
+			continue
+		if devinline[0] in trainwords: #Check not '#UNK#'
+			emission = emission_dict[devinline[0]][i]
+		else:
+			emission = emission_dict['#UNK#'][i]
+		pi[0][i] = [transition_dict[i]['##START##'] * emission, '##START##']
+	
+
+	for k in range(1, len(devinline)):
+		for i in tags:
+			for j in tags:
+				if transition_dict[i][j] == 0.0:
+					continue
+				score = pi[k-1][j][0] * transition_dict[i][j]
+				if score > pi[k][i][0]:
+					pi[k][i] = [score, j]
+			if devinline[k] in trainwords:
+				emission = emission_dict[devinline[k]][i]
+			else:
+				emission = emission_dict['#UNK#'][i]
+			pi[k][i][0] *= emission
+	#Last
+	first_pred = [0.0, '']
+	for i in tags:
+		if transition_dict['##STOP##'][i] == 0.0:
+			continue
+		score = pi[-1][i][0] * transition_dict['##STOP##'][i]
+		if score > first_pred[0]:
+			first_pred = [score, i]
+	
+	if not first_pred[1]:
+		return
+	
+	prediction = [first_pred[1]]
+	for k in reversed(range(len(devinline))):
+		if k == 0:
+			break
+		prediction.insert(0, pi[k][prediction[0]][1])
+	return prediction
+
+
+def implement_viterbi(dataset, trainwords, traintags, traindf, transition, emission):
+	inputdata = open(dataset + '/dev.in', 'r', encoding='utf-8')
+	output = open(dataset + '/dev.p3.out', 'w', encoding='utf-8')
+
+	devinline = []
+	for line in inputdata:
+		line = line.rstrip()
+		if line:
+			devinline.append(line)
+		else:
+			print(devinline)
+			prediction = viterbi(devinline, trainwords, traintags, traindf, devinline, transition, emission)
+			print('Prediction for sentence done.\n')
+			for i in range(len(devinline)):
+				if prediction:
+					output.write('{} {}\n'.format(devinline[i], prediction[i]))
+				else:
+					output.write('{} O\n'.format(devinline[i]))
+			
+			output.write('\n')
+			devinline.clear()
+	print('Output file ready')
+	inputdata.close()
+	output.close()
 
 #------part 4------
 
